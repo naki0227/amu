@@ -1,0 +1,30 @@
+name: amu
+description: "Weaving code into stories."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+  audioplayers: ^6.0.0
+  google_fonts: ^6.1.0
+  google_generative_ai: ^0.4.0
+  file_picker: ^8.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - checkouts/encura/assets/
+    - checkouts/encura/assets/screenshots/
+    - checkouts/encura/assets/art/
+    - assets/audio/
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
