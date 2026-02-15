@@ -19,7 +19,7 @@ class AmuLocalization {
   static const Map<String, String> _ja = {
     // Wizard
     'wizard.api.title': 'Gemini API 設定',
-    'wizard.api.description': 'AmuはGoogle Gemini 3.0を使用してコードを解析します。\nAPIキーを入力してください。',
+    'wizard.api.description': 'AmuはGoogle Gemini 2.5 Proを使用してコードを解析します。\nAPIキーを入力してください。',
     'wizard.api.hint': 'Gemini APIキーを入力 (AIza...)',
     'wizard.api.note': 'キーはこのセッション中のみ保存されます。',
     'wizard.lang.title': 'ターゲット言語',
@@ -33,7 +33,7 @@ class AmuLocalization {
     'wizard.generate': '生成開始',
     'wizard.next': '次へ',
     'wizard.analyzing': 'コンテキストを解析中...',
-    'wizard.analyzing.sub': 'Gemini 3.0 FlashでプロジェクトDNAを分析しています...',
+    'wizard.analyzing.sub': 'Gemini 2.5 ProでプロジェクトDNAを分析しています...',
     
     // Common
     'common.or': 'または',
@@ -56,7 +56,7 @@ class AmuLocalization {
   static const Map<String, String> _en = {
     // Wizard
     'wizard.api.title': 'Gemini API Setup',
-    'wizard.api.description': 'Amu uses Google Gemini 3.0 to analyze your code.\nPlease enter your API key.',
+    'wizard.api.description': 'Amu uses Google Gemini 2.5 Pro to analyze your code.\nPlease enter your API key.',
     'wizard.api.hint': 'Enter Gemini API Key (AIza...)',
     'wizard.api.note': 'Your key is stored only in memory for this session.',
     'wizard.lang.title': 'Target Language',
@@ -68,7 +68,7 @@ class AmuLocalization {
     'wizard.generate': 'Generate',
     'wizard.next': 'Next',
     'wizard.analyzing': 'Weaving Context...',
-    'wizard.analyzing.sub': 'Analyzing project DNA using Gemini 3.0 Flash...',
+    'wizard.analyzing.sub': 'Analyzing project DNA using Gemini 2.5 Pro...',
     
     // Common
     'common.or': 'OR',
