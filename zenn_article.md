@@ -12,8 +12,7 @@ published: true
 **得られる知識**: Gemini 2.5 ProによるMulti-Agent並列パイプラインの設計・実装方法、GitHubリポジトリをWeb上で直接解析する `ProjectSource` 抽象化パターン、プロンプトエンジニアリングの実践的テクニック。
 :::
 
-**🌐 Live Demo**: https://amu-438780240843.asia-northeast1.run.app
-**📦 GitHub**: https://github.com/naki0227/amu
+
 
 ## Pain: ドキュメントは地獄だ
 
@@ -345,8 +344,7 @@ final totalPaths = [...priorityPaths, ...otherPaths].take(50).toList();
 ### After:
 GitHub URLを入力 → **30秒** → CM動画のストーリーボード、Marpスライド、Zenn記事、技術FAQ、すべてが自動生成される。
 
-**🌐 Web版（今すぐ試せる）**: https://amu-438780240843.asia-northeast1.run.app
-**📦 ソースコード**: https://github.com/naki0227/amu
+
 
 ## ハマりポイント集（Time Saver）
 
