@@ -51,4 +51,14 @@ api_keys.json
 config.json
 .gemini_key
 checkouts/
-amu_output/
+
+# Firebase
+.firebase/
+firebase-debug.log
+.firebaserc
+
+# Editor / Personal
+zenn_writing_guidelines.md
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock

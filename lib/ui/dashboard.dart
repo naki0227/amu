@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:amu/ui/wizard/project_wizard.dart';
 import 'package:amu/logic/localization.dart';
+import 'package:amu/studio/amu_studio.dart';
 
 /// Amu Dashboard
 /// 
@@ -32,8 +33,33 @@ class AmuApp extends StatelessWidget {
   }
 }
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  bool _hasLastProject = false;
+  Map<String, dynamic>? _lastProjectDna;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkLastProject();
+  }
+
+  Future<void> _checkLastProject() async {
+    // Check if amu_output/project.json exists (mocking the persistent storage for now)
+    // Actually, ProjectWizard saves to shared preferences or file?
+    // ProjectStorage logic suggests keeping things in memory or minimal file.
+    // Let's check for the existence of `amu_output/config.json` or similar as a heuristic.
+    // Ideally, we should use `ProjectStorage` logic.
+    // For now, let's just leave it simple: if the user just created one, they are in Studio.
+    // If they restart app, maybe clean slate is fine for MVP, but user said "too mock".
+    // I will replace the "Recent Weaves" with an empty state or "No Projects Yet".
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -184,10 +210,17 @@ class DashboardScreen extends StatelessWidget {
           ],
         ),
         ElevatedButton.icon(
-          onPressed: () {
-            Navigator.of(context).push(
+          onPressed: () async {
+            final result = await Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ProjectWizard())
             );
+            
+            if (result != null && result is Map<String, dynamic> && context.mounted) {
+               // Navigate to Studio with the generated project
+               Navigator.of(context).push(
+                 MaterialPageRoute(builder: (_) => AmuStudio(initialStoryboard: result))
+               );
+            }
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF6366F1),
@@ -204,11 +237,11 @@ class DashboardScreen extends StatelessWidget {
   Widget _buildStatsRow() {
     return Row(
       children: [
-        _buildStatCard("Active Projects", "3", Icons.motion_photos_auto, Colors.orange),
+        _buildStatCard("Active Projects", "0", Icons.motion_photos_auto, Colors.grey),
         const SizedBox(width: 16),
-        _buildStatCard("Total Generated", "128", Icons.video_library, Colors.blue),
+        _buildStatCard("Total Generated", "0", Icons.video_library, Colors.grey),
         const SizedBox(width: 16),
-        _buildStatCard("Render Time (Avg)", "14s", Icons.timer, Colors.green),
+        _buildStatCard("Render Time (Avg)", "--", Icons.timer, Colors.grey),
       ],
     );
   }
@@ -255,63 +288,30 @@ class DashboardScreen extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Expanded(
-          child: ListView.separated(
-            itemCount: 5,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              return Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.03),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withOpacity(0.05)),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 60,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.indigo.withOpacity(0.4), Colors.purple.withOpacity(0.4)],
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Center(child: Icon(Icons.movie, color: Colors.white54, size: 20)),
-                    ),
-                    const SizedBox(width: 16),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Project Alpha - Marketing V1",
-                          style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.9)),
-                        ),
-                        Text(
-                          "Last edited 2h ago",
-                          style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.green.withOpacity(0.3)),
-                      ),
-                      child: const Text(
-                        "Completed",
-                        style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Icon(Icons.more_vert, color: Colors.white.withOpacity(0.5)),
-                  ],
-                ),
-              );
-            },
+          child: Container(
+             width: double.infinity,
+             padding: const EdgeInsets.all(32),
+             decoration: BoxDecoration(
+               color: Colors.white.withOpacity(0.03),
+               borderRadius: BorderRadius.circular(16),
+               border: Border.all(color: Colors.white.withOpacity(0.05)),
+             ),
+             child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                   Icon(Icons.layers_clear, size: 64, color: Colors.white.withOpacity(0.2)),
+                   const SizedBox(height: 16),
+                   Text(
+                     "No Projects Yet",
+                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white.withOpacity(0.5)),
+                   ),
+                   const SizedBox(height: 8),
+                   Text(
+                     "Start a new project to see it here.",
+                     style: TextStyle(color: Colors.white.withOpacity(0.3)),
+                   ),
+                ],
+             ),
           ),
         ),
       ],

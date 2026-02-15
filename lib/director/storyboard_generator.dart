@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 
 /// Creative Director Logic (Prototype)
@@ -18,88 +19,186 @@ class StoryboardGenerator {
       return fallback;
     }
 
-    // --- Phase 1: Hook ---
-    final scene1 = {
+    // --- If Gemini provided Scenes, use them ---
+    if (dna['scenes'] != null && (dna['scenes'] as List).isNotEmpty) {
+       final aiScenes = (dna['scenes'] as List).map((s) {
+          // Robustness: Ensure required keys
+          final type = s['type'] ?? 'title';
+          final duration = (s['duration'] as num?)?.toDouble() ?? 5.0;
+          
+          // Asset Logic: If 'assetPath' is "asset_0" or missing, try to resolve
+          String asset = s['assetPath'] ?? "";
+          if (type == 'image_display' && (asset.isEmpty || !asset.startsWith('/'))) {
+              // Fallback to discovered assets
+             asset = getAsset(0, ""); // Simple fallback
+             // Better: Iterate?
+          }
+          
+          return {
+             ...s as Map<String, dynamic>,
+             "duration": duration,
+             "type": type,
+             "assetPath": asset,
+          };
+       }).toList();
+       
+       return {
+         "fps": 60,
+         "width": 1920,
+         "height": 1080,
+         "durationSeconds": aiScenes.fold<double>(0, (sum, s) => sum + (s['duration'] as num).toDouble()).toInt(),
+         "bgm": bgm,
+         "brandPalette": dna['brandPalette'] ?? {"background": "#1E293B"},
+         "platform": dna['platform'] ?? "mobile",
+         "language": dna['language'] ?? "English",
+         "widget_tree": dna['widget_tree'],
+         "scenes": aiScenes
+       };
+    }
+
+    // --- Fallback: Rule-Based Logic (Asset-First Mode) ---
+    
+    // Attempt to find absolute icon path from discovered assets or current directory
+    String iconPath = "assets/photo/icon.png";
+    try {
+      // Find absolute path of icon in assets
+      final iconFile = assets.firstWhere((a) => a.contains('assets/photo/icon.png'), orElse: () => "");
+      if (iconFile.isNotEmpty) iconPath = iconFile;
+      else {
+          // Construct absolute path assuming we are in project root
+          final absIcon = "${Directory.current.path}/assets/photo/icon.png";
+          if (File(absIcon).existsSync()) iconPath = absIcon;
+      }
+    } catch (_) {}
+
+    final photoAssets = assets.where((a) => a.contains('assets/photo') && !a.contains('icon.png')).toList();
+    final int assetCount = photoAssets.length;
+    final List<Map<String, dynamic>> finalScenes = [];
+    final List<String> missingAssetsInstructions = [];
+
+    // --- GAP ANALYSIS ---
+    if (assetCount == 0) {
+        missingAssetsInstructions.add("Add screenshots to 'assets/photo' to make the video more engaging.");
+    } else if (assetCount < 3) {
+        missingAssetsInstructions.add("Adding at least 3 screenshots enables the 'Dynamic Montage' mode.");
+    }
+
+    // Helper to cycle through assets if we have few
+    String getPhoto(int index) {
+        if (photoAssets.isEmpty) return "";
+        return photoAssets[index % photoAssets.length];
+    }
+
+    // --- PHASE 0: INTRO ---
+    finalScenes.add({
+      "id": "p0_intro",
+      "duration": 3.0,
+      "type": "image_display",
+      "assetPath": iconPath, 
+      "text": "",
+      "subtext": "",
+      "overlayText": dna['appName']?.toUpperCase() ?? "AMU APP",
+      "camera": {"start": {"zoom": 0.8}, "end": {"zoom": 1.0}}
+    });
+
+    // --- PHASE 1: HOOK ---
+    finalScenes.add({
       "id": "p1_hook",
-      "duration": 4.0,
+      "duration": 3.0,
       "type": "text_overlay",
-      "text": dna['hook_main'] ?? "Code into Stories",
+      "text": (dna['hook_main'] ?? "Code into Stories").toUpperCase(),
       "subtext": dna['hook_sub'] ?? "Automated CM Generation",
       "backgroundColor": "#000000"
-    };
+    });
 
-    // --- Phase 2: B-Roll (Real Project Asset) ---
-    final scene2 = {
-      "id": "p2_broll",
-      "duration": 5.0,
-      "type": assets.isNotEmpty ? "image_display" : "title",
-      "assetPath": getAsset(0, ""),
-      "text": dna['product_name'] ?? "Project",
-      "subtext": dna['overlay_broll'] ?? "Visualized by Amu", // Dynamic
-      "camera": {
-        "start": {"zoom": 1.2, "dx": -0.1, "dy": 0.0},
-        "end": {"zoom": 1.0, "dx": 0.0, "dy": 0.0}
-      },
-      "overlayText": dna['overlay_broll'] ?? "Authentic Spirit"
-    };
+    // --- PHASE 2-5: DYNAMIC BODY ---
+    if (assetCount == 0) {
+        // Mode A: Typography Only (No Assets)
+        finalScenes.add({
+            "id": "p2_typo_1", "duration": 4.0, "type": "title",
+            "text": (dna['features']?.isNotEmpty == true ? dna['features'][0] : "INNOVATION").toUpperCase(),
+            "subtext": "Core Feature", "backgroundColor": "#1E293B"
+        });
+        finalScenes.add({
+            "id": "p3_typo_2", "duration": 4.0, "type": "title",
+            "text": (dna['features'] != null && dna['features'].length > 1 ? dna['features'][1] : "PERFORMANCE").toUpperCase(),
+            "subtext": "Optimized", "backgroundColor": "#0F172A"
+        });
+    } else {
+        // Mode B: Asset Showcase (Aggressive Slideshow)
+        
+        // 1. Hero Scene (First Asset)
+        finalScenes.add({
+            "id": "p2_hero", 
+            "duration": 5.0, 
+            "type": "image_display",
+            "assetPath": getPhoto(0),
+            "text": "",
+            "overlayText": (dna['product_name'] ?? "PROJECT").toUpperCase(),
+            "camera": {"start": {"zoom": 1.1, "dx": -0.05}, "end": {"zoom": 1.0}}
+        });
 
-    // --- Phase 3: Solution ---
-    final scene3 = {
-      "id": "p3_solution",
-      "duration": 3.0,
-      "type": "title",
-      "text": dna['appName'] ?? "Amu Generated",
-      "subtext": dna['hook_sub'] ?? "Native Reconstruction",
-      "backgroundColor": dna['brandPalette']?['background'] ?? "#1E293B"
-    };
+        // 2. Dynamic Loop for ALL remaining assets (Limit 10 to avoid too long video)
+        // If we have more assets, we create a rapid-fire sequence
+        int remainingStart = 1;
+        int maxSlides = 10;
+        
+        for (int i = remainingStart; i < assetCount && i < maxSlides; i++) {
+            // Alternate Camera Movements
+            bool isEven = i % 2 == 0;
+            finalScenes.add({
+                "id": "p3_slide_$i", 
+                "duration": 3.0, // Fast paced
+                "type": "image_display",
+                "assetPath": photoAssets[i], // Direct access
+                "text": "",
+                "overlayText": "", // Clean visual
+                "camera": {
+                    "start": isEven ? {"zoom": 1.0} : {"zoom": 1.2}, 
+                    "end": isEven ? {"zoom": 1.1, "dx": 0.05} : {"zoom": 1.0}
+                }
+            });
+        }
+        
+        // 3. Feature Highlight (Text Intermission if we have many slides)
+        if (assetCount > 3) {
+             finalScenes.insert(3, {
+                "id": "p2_intermission", 
+                "duration": 3.0, 
+                "type": "title",
+                "text": (dna['features']?.isNotEmpty == true ? dna['features'][0] : "FEATURES").toUpperCase(),
+                "subtext": "Visual Overview", 
+                "backgroundColor": "#1E293B"
+            });
+        }
+    }
 
-    // --- Phase 4: Feature 1 ---
-    final scene4 = {
-      "id": "p4_feature_1",
-      "duration": 5.0,
-      "type": assets.length > 1 ? "image_display" : "text_overlay",
-      "assetPath": getAsset(1, ""),
-      "text": dna['features']?.isNotEmpty == true ? dna['features'][0] : "Key Feature",
-      "overlayText": dna['overlay_feature1'] ?? "Core Performance",
-      "camera": {
-        "start": {"zoom": 1.0, "dx": 0.0, "dy": 0.0},
-        "end": {"zoom": 1.1, "dx": 0.0, "dy": 0.0}
-      }
-    };
-
-    // --- Phase 5: Feature 2 ---
-    final scene5 = {
-      "id": "p5_feature_2",
-      "duration": 5.0,
-      "type": assets.length > 2 ? "image_display" : "title",
-      "assetPath": getAsset(2, ""),
-      "text": assets.length > 2 ? "" : (dna['features']?.length == 2 ? dna['features'][1] : "Innovation"),
-      "overlayText": dna['overlay_feature2'] ?? "Global Reach",
-      "camera": {
-        "start": {"zoom": 1.0, "dx": 0.0, "dy": 0.0},
-        "end": {"zoom": 1.3, "dx": 0.1, "dy": 0.1}
-      }
-    };
-
-    // --- Phase 6: Outro ---
-    final scene6 = {
+    // --- PHASE 6: OUTRO ---
+    finalScenes.add({
       "id": "p6_outro",
-      "duration": 4.0,
-      "type": "title",
-      "text": dna['appName'] ?? "Done",
-      "subtext": dna['outro_sub'] ?? "Powered by Amu Engine",
-      "backgroundColor": "#000000"
-    };
+      "duration": 5.0,
+      "type": "image_display",
+      "assetPath": iconPath,
+      "text": "",
+      "overlayText": "DOWNLOAD NOW",
+      "subtext": dna['appName'] ?? "Amu App",
+      "camera": {"start": {"zoom": 1.5}, "end": {"zoom": 1.0}}
+    });
+
+    final int totalDuration = finalScenes.fold<double>(0, (sum, s) => sum + (s['duration'] as num).toDouble()).toInt();
 
     return {
       "fps": 60,
       "width": 1920,
       "height": 1080,
-      "durationSeconds": 26,
+      "durationSeconds": totalDuration,
       "bgm": bgm,
-      "brandPalette": dna['brandPalette'] ?? {"background": "#1E293B"}, // Pass global palette
+      "brandPalette": dna['brandPalette'] ?? {"background": "#1E293B"},
       "platform": dna['platform'] ?? "mobile",
-      "scenes": [scene1, scene2, scene3, scene4, scene5, scene6]
+      "language": dna['language'] ?? "English",
+      "widget_tree": dna['widget_tree'],
+      "scenes": finalScenes,
+      "missing_assets_instruction": missingAssetsInstructions // New Field
     };
   }
 }

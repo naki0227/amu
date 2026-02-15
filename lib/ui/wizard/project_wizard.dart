@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
+import 'dart:io' if (dart.library.html) 'dart:io';
 import 'package:amu/studio/amu_studio.dart';
 import 'package:amu/director/storyboard_generator.dart';
+import 'package:amu/director/article_generator.dart';
+import 'package:amu/director/slide_generator.dart';
+import 'package:amu/director/spec_generator.dart';
 import 'package:amu/logic/gemini_service.dart';
 import 'package:amu/logic/localization.dart';
+import 'package:amu/logic/project_source.dart';
+import 'package:amu/logic/local_project_source.dart';
 import 'package:file_picker/file_picker.dart';
 
 class ProjectWizard extends StatefulWidget {
@@ -49,45 +55,47 @@ class _ProjectWizardState extends State<ProjectWizard> {
   }
 
   Future<void> _loadProfile() async {
-      final file = File('amu_output/config.json');
-      if (await file.exists()) {
-          try {
+      if (kIsWeb) return; // Web: No local config file
+      try {
+         final file = File('amu_output/config.json');
+         if (await file.exists()) {
              final data = jsonDecode(await file.readAsString());
              setState(() {
-                 // API Key
                  final key = data['apiKey'] as String?;
                  if (key != null && key.isNotEmpty) {
                      _apiKey = key;
                      _apiKeyController.text = key;
                  }
-                 // Language
                  final lang = data['language'] as String?;
                  if (lang != null && lang.isNotEmpty) {
                      _selectedLanguage = lang;
                  }
-                 // Source Path
                  final src = data['sourcePath'] as String?;
                  if (src != null && src.isNotEmpty) {
                      _sourceUrl = src;
                      _sourceController.text = src;
                  }
              });
-          } catch (e) {
-              print("Failed to load config: $e");
-          }
+         }
+      } catch (e) {
+          print("Failed to load config: $e");
       }
   }
   
   Future<void> _saveProfile() async {
-      final dir = Directory('amu_output');
-      if (!await dir.exists()) await dir.create(recursive: true);
-      
-      final file = File('amu_output/config.json');
-      await file.writeAsString(jsonEncode({
-          "apiKey": _apiKey.trim(),
-          "language": _selectedLanguage,
-          "sourcePath": _sourceUrl.trim(),
-      }));
+      if (kIsWeb) return; // Web: No local config file
+      try {
+         final dir = Directory('amu_output');
+         if (!await dir.exists()) await dir.create(recursive: true);
+         final file = File('amu_output/config.json');
+         await file.writeAsString(jsonEncode({
+             "apiKey": _apiKey.trim(),
+             "language": _selectedLanguage,
+             "sourcePath": _sourceUrl.trim(),
+         }));
+      } catch (e) {
+          print("Failed to save config: $e");
+      }
   }
 
   void _onStepComplete() {
@@ -119,30 +127,68 @@ class _ProjectWizardState extends State<ProjectWizard> {
       setState(() => _isAnalyzing = true);
       
       try {
-          // 1. Get DNA from Gemini
-          // Use gemini-2.5-pro
+          // 1. Create ProjectSource based on input
+          final ProjectSource source;
+          final String targetPath;
+          
+          if (_sourceUrl.startsWith('https://github.com/')) {
+              // GitHub URL -> GitHubProjectSource
+              final ghSource = GitHubProjectSource.fromUrl(_sourceUrl);
+              if (ghSource == null) throw Exception('Invalid GitHub URL: $_sourceUrl');
+              source = ghSource;
+              targetPath = _sourceUrl;
+          } else {
+              // Local path -> LocalProjectSource (Desktop only)
+              if (kIsWeb) throw Exception('Local paths are not supported on Web. Please use a GitHub URL.');
+              final localPath = _sourceUrl.isEmpty ? Directory.current.path : _sourceUrl;
+              source = LocalProjectSource(localPath);
+              targetPath = localPath;
+          }
+
+          // 2. Get DNA from Gemini
           final service = GeminiService(_apiKey, modelName: 'gemini-2.5-pro');
+          final dna = await service.analyzeProject(source, language: _selectedLanguage);
           
-          // Use current directory if source is empty (for demo)
-          final targetPath = _sourceUrl.isEmpty ? Directory.current.path : _sourceUrl;
-          
-          final dna = await service.analyzeProject(targetPath, language: _selectedLanguage);
-          
-          // 2. Generate Storyboard
+          // 3. Generate Storyboard
           final generator = StoryboardGenerator();
           final sb = generator.generateStoryboard(dna);
+
+          // 4. Generate All Assets (Parallel)
+          if (mounted) setState(() => _isAnalyzing = true);
+
+          final articleGen = ArticleGenerator(_apiKey);
+          final slideGen = SlideGenerator(_apiKey);
+          final specGen = SpecGenerator(_apiKey);
+
+          final sourceSummary = "Analyzed ${dna['product_name']} with ${dna['features']}";
+
+          final results = await Future.wait([
+             articleGen.generateArticle(dna, sourceSummary, language: _selectedLanguage),
+             slideGen.generateSlides(dna, language: _selectedLanguage),
+             specGen.generateSpec(dna, sourceSummary, language: _selectedLanguage)
+          ]);
+
+          sb['cached_article'] = results[0];
+          sb['cached_slide'] = results[1];
+          sb['cached_spec'] = results[2];
           
           if (mounted) {
-              // Return Data to Studio
-              Navigator.of(context).pop(sb);
+              final missingAssets = (sb['missing_assets_instruction'] as List?)?.cast<String>() ?? [];
+              
+              Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(builder: (context) => AmuStudio(
+                      projectPath: targetPath, 
+                      initialStoryboard: sb,
+                      missingAssets: missingAssets
+                  ))
+              );
           }
       } catch (e) {
-          // Show Error and go back
           if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
               setState(() {
                   _isAnalyzing = false;
-                  _currentStep = 2; // Go back to source input
+                  _currentStep = 2;
                   _pageController.jumpToPage(2);
               });
           }
@@ -325,16 +371,22 @@ class _ProjectWizardState extends State<ProjectWizard> {
   }
 
   Widget _buildSourceStep() {
+      final bool isWeb = kIsWeb;
       return SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 64, vertical: 24),
           child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                  const Icon(Icons.code, size: 48, color: Colors.pinkAccent),
+                  Icon(isWeb ? Icons.link : Icons.code, size: 48, color: Colors.pinkAccent),
                    const SizedBox(height: 24),
                   Text(t('wizard.source.title'), style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
-                  Text(t('wizard.source.description'), style: const TextStyle(color: Colors.white54, fontSize: 14)),
+                  Text(
+                    isWeb 
+                      ? 'GitHubリポジトリのURLを入力してください'
+                      : t('wizard.source.description'), 
+                    style: const TextStyle(color: Colors.white54, fontSize: 14)
+                  ),
                   const SizedBox(height: 32),
                   Row(
                     children: [
@@ -346,24 +398,31 @@ class _ProjectWizardState extends State<ProjectWizard> {
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: Colors.white.withOpacity(0.05),
-                            hintText: t('wizard.source.hint'),
+                            hintText: isWeb 
+                              ? 'https://github.com/owner/repo'
+                              : t('wizard.source.hint'),
                             hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-                            prefixIcon: const Icon(Icons.folder_open, color: Colors.white30),
+                            prefixIcon: Icon(
+                              isWeb ? Icons.link : Icons.folder_open, 
+                              color: Colors.white30
+                            ),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      ElevatedButton.icon(
-                        onPressed: _pickFolder,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.indigoAccent,
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      if (!isWeb) ...[
+                        const SizedBox(width: 12),
+                        ElevatedButton.icon(
+                          onPressed: _pickFolder,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.indigoAccent,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          icon: const Icon(Icons.folder_open, color: Colors.white, size: 18),
+                          label: Text(t('wizard.source.browse'), style: const TextStyle(color: Colors.white)),
                         ),
-                        icon: const Icon(Icons.folder_open, color: Colors.white, size: 18),
-                        label: Text(t('wizard.source.browse'), style: const TextStyle(color: Colors.white)),
-                      ),
+                      ],
                     ],
                   ),
               ],
@@ -372,6 +431,7 @@ class _ProjectWizardState extends State<ProjectWizard> {
   }
 
   Future<void> _pickFolder() async {
+    if (kIsWeb) return; // Safety guard
     String? selectedDirectory = await FilePicker.platform.getDirectoryPath(
       dialogTitle: t('wizard.source.select_folder'),
     );

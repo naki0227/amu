@@ -86,7 +86,7 @@ class _StoryboardDriverState extends State<StoryboardDriver> {
         if (activeScene == null) return const SizedBox();
 
         // 2. Calculate Scene Progress (0.0 -> 1.0)
-        final double sceneDuration = (activeScene['duration'] as num).toDouble();
+        final double sceneDuration = (activeScene['duration'] as num?)?.toDouble() ?? 5.0;
         // Avoid division by zero
         final double sceneProgress = sceneDuration > 0 
            ? ((currentTime - sceneStartTime) / sceneDuration).clamp(0.0, 1.0)
@@ -111,7 +111,7 @@ class _StoryboardDriverState extends State<StoryboardDriver> {
         // BRANDING: Extract Colors
         final palette = widget.storyboard['brandPalette'] ?? {};
         final String bgHex = palette['background'] ?? '#0F172A';
-        final Color bgColor = Color(int.parse(bgHex.replaceAll('#', '0xFF')));
+        final Color bgColor = _parseColor(bgHex);
         final Color primaryColor = Colors.indigoAccent; // Default accent
 
         // Wrap in Dynamic Theme & SCALER
@@ -142,12 +142,21 @@ class _StoryboardDriverState extends State<StoryboardDriver> {
       },
     );
   }
+  
+  Color _parseColor(String hex) {
+      if (hex.isEmpty) return const Color(0xFF0F172A);
+      try {
+          return Color(int.parse(hex.replaceAll('#', '0xFF')));
+      } catch (_) {
+          return const Color(0xFF0F172A);
+      }
+  }
 
   Widget _buildAmbientBackground() {
     // Extract dynamic background color
     final palette = widget.storyboard['brandPalette'] ?? {};
     final String bgHex = palette['background'] ?? '#0F172A';
-    final Color bgColor = Color(int.parse(bgHex.replaceAll('#', '0xFF')));
+    final Color bgColor = _parseColor(bgHex);
 
     return Stack(
       fit: StackFit.expand,
@@ -232,8 +241,43 @@ class _StoryboardDriverState extends State<StoryboardDriver> {
 
   Widget _buildWidgetScene(Map<String, dynamic> scene, double progress) {
     // Generic reconstruction placeholder (if we had one)
-    Widget child = const Center(
-      child: Icon(Icons.auto_awesome, color: Colors.white24, size: 100),
+    // Generic reconstruction placeholder (if we had one)
+    Widget child = Container(
+      decoration: BoxDecoration(
+        color: Colors.white10,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Column(
+        children: [
+            // Mock App Bar
+            Container(
+                height: 48,
+                decoration: BoxDecoration(
+                    color: Colors.white12,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                ),
+            ),
+            // Mock Content
+            Expanded(
+                child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                            Container(width: 120, height: 24, color: Colors.white12),
+                            const SizedBox(height: 16),
+                            Container(width: double.infinity, height: 120, color: Colors.white10),
+                            const SizedBox(height: 16),
+                            Container(width: 200, height: 16, color: Colors.white12),
+                            const SizedBox(height: 8),
+                            Container(width: 160, height: 16, color: Colors.white12),
+                        ],
+                    ),
+                ),
+            ),
+        ],
+      ),
     );
 
     // 2. Apply Camera
@@ -243,9 +287,17 @@ class _StoryboardDriverState extends State<StoryboardDriver> {
       final start = camera['start'];
       final end = camera['end'];
       final double t = Curves.easeInOutCubic.transform(progress);
-      final double zoom = _lerp((start['zoom'] as num).toDouble(), (end['zoom'] as num).toDouble(), t);
-      final double dx = _lerp((start['dx'] as num).toDouble(), (end['dx'] as num).toDouble(), t);
-      final double dy = _lerp((start['dy'] as num).toDouble(), (end['dy'] as num).toDouble(), t);
+      
+      final double startZoom = (start['zoom'] as num?)?.toDouble() ?? 1.0;
+      final double endZoom = (end['zoom'] as num?)?.toDouble() ?? 1.0;
+      final double startDx = (start['dx'] as num?)?.toDouble() ?? 0.0;
+      final double endDx = (end['dx'] as num?)?.toDouble() ?? 0.0;
+      final double startDy = (start['dy'] as num?)?.toDouble() ?? 0.0;
+      final double endDy = (end['dy'] as num?)?.toDouble() ?? 0.0;
+
+      final double zoom = _lerp(startZoom, endZoom, t);
+      final double dx = _lerp(startDx, endDx, t);
+      final double dy = _lerp(startDy, endDy, t);
 
       transformedChild = Transform(
         alignment: Alignment.center,
@@ -258,7 +310,7 @@ class _StoryboardDriverState extends State<StoryboardDriver> {
       children: [
         _buildAmbientBackground(), // Unified Background
         transformedChild,
-        if (scene['overlayText'] != null)
+        if (scene['overlayText'] != null || scene['text'] != null)
           Positioned(
             bottom: 100,
             left: 0,
@@ -270,15 +322,16 @@ class _StoryboardDriverState extends State<StoryboardDriver> {
                   padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 24),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(50),
-                    border: Border.all(color: Colors.white24, width: 2),
+                    borderRadius: BorderRadius.circular(8), // Reduced radius for "strict" look? Or keep it round? Keep it clean.
+                    border: Border.symmetric(horizontal: BorderSide(color: Colors.white38, width: 1)),
                   ),
                   child: Text(
-                    (scene['overlayText'] ?? '').toUpperCase(),
+                    (scene['overlayText'] ?? scene['text'] ?? '').toUpperCase(),
                     style: const TextStyle(
                        color: Colors.white, fontSize: 32, fontWeight: FontWeight.w500,
                        letterSpacing: 2.0, fontFamily: 'serif',
                     ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ),
@@ -308,7 +361,10 @@ class _StoryboardDriverState extends State<StoryboardDriver> {
     }
 
     if (imageProvider == null) {
-       child = Container(color: Colors.black, child: const Icon(Icons.broken_image, color: Colors.white24));
+       child = Container(
+           color: Colors.black, 
+           child: const Center(child: Text("NO IMAGE ASSET", style: TextStyle(color: Colors.white24, fontSize: 10)))
+       );
     } else if (isScreenshot) {
       // ADAPTIVE FRAMING LOGIC
       // 1. Check Metadata (Platform)
@@ -351,9 +407,16 @@ class _StoryboardDriverState extends State<StoryboardDriver> {
       final start = camera['start'];
       final end = camera['end'];
       final double t = Curves.easeInOutSine.transform(progress);
-      final double zoom = _lerp((start['zoom'] as num).toDouble(), (end['zoom'] as num).toDouble(), t);
-      final double dx = _lerp((start['dx'] as num).toDouble(), (end['dx'] as num).toDouble(), t);
-      final double dy = _lerp((start['dy'] as num).toDouble(), (end['dy'] as num).toDouble(), t);
+      final double startZoom = (start['zoom'] as num?)?.toDouble() ?? 1.0;
+      final double endZoom = (end['zoom'] as num?)?.toDouble() ?? 1.0;
+      final double startDx = (start['dx'] as num?)?.toDouble() ?? 0.0;
+      final double endDx = (end['dx'] as num?)?.toDouble() ?? 0.0;
+      final double startDy = (start['dy'] as num?)?.toDouble() ?? 0.0;
+      final double endDy = (end['dy'] as num?)?.toDouble() ?? 0.0;
+
+      final double zoom = _lerp(startZoom, endZoom, t);
+      final double dx = _lerp(startDx, endDx, t);
+      final double dy = _lerp(startDy, endDy, t);
 
       child = Transform(
         alignment: Alignment.center,
@@ -369,7 +432,7 @@ class _StoryboardDriverState extends State<StoryboardDriver> {
 
         child,
         
-        if (scene['overlayText'] != null)
+        if (scene['overlayText'] != null || scene['text'] != null)
           Positioned(
             bottom: 120,
             left: 0,
@@ -381,18 +444,16 @@ class _StoryboardDriverState extends State<StoryboardDriver> {
                   padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 24),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(0),
+                    borderRadius: BorderRadius.circular(8),
                     border: Border.symmetric(horizontal: BorderSide(color: Colors.white38, width: 1)),
                   ),
                   child: Text(
-                    (scene['overlayText'] ?? '').toUpperCase(),
+                    (scene['overlayText'] ?? scene['text'] ?? '').toUpperCase(),
                     style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 48,
-                      fontWeight: FontWeight.w300, 
-                      letterSpacing: 4.0,
-                      fontFamily: 'serif',
+                       color: Colors.white, fontSize: 32, fontWeight: FontWeight.w500,
+                       letterSpacing: 2.0, fontFamily: 'serif',
                     ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ),

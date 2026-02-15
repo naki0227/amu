@@ -1,30 +1,96 @@
-# 🎬 Amu Studio
+# 📜 Amu（アム） — コードを物語に編み出すAI PRエージェント
 
-**コードから、プロモーション動画へ。**
+<p align="center">
+  <img src="assets/photo/icon.png" width="120" alt="Amu Logo" />
+</p>
 
-Amu は、Flutterアプリのソースコードを AI で解析し、自動的にプロモーション動画を生成するスタジオ環境です。
+<p align="center">
+  <strong>GitHubリポジトリを読み取り、プロダクトの広報資産を自律的に生成するAgentic AI</strong>
+</p>
+
+<p align="center">
+  <a href="#デモ">🌐 Live Demo</a> •
+  <a href="#特徴">✨ 特徴</a> •
+  <a href="#アーキテクチャ">🏗 アーキテクチャ</a> •
+  <a href="#セットアップ">🛠 セットアップ</a>
+</p>
 
 ---
 
-## ✨ 主な機能
+## 🎯 解決する課題
 
-| 機能 | 説明 |
+> 「開発は楽しい。でも広報が辛い。」
+
+多くのエンジニアにとって、コードを書くことは喜びですが、デモ動画、スライド、技術記事といった **広報資産** の作成は重荷です。
+結果として、優れたプロダクトが誰にも知られず埋もれてしまいます。
+
+**Amu** は、GitHubリポジトリのURLを入力するだけで、ソースコードの「DNA」を解析し、4つの広報資産を自律的に「編み出す」AIエージェントです。
+
+---
+
+## ✨ 特徴
+
+| 資産 | 説明 |
 |---|---|
-| **Code-to-Video** | Gemini AI がコードを解析し、アプリの「DNA」(ブランドカラー、UI構造、キーメッセージ) を抽出。 |
-| **Server-Driven UI (SDUI)** | 解析された Widget Tree を元に、アプリのUIを忠実に再現するインタラクティブプレビュー。 |
-| **タイムライン編集** | シーンの追加・削除、ナレーションテキストの編集、カメラアニメーション設定。 |
-| **動画エクスポート** | レンダリングした静止画から MP4/GIF を自動生成 (ffmpeg 利用)。 |
+| 🎬 **Amu CM** | 固定デルタレンダリングによる高品質プロダクト紹介動画 |
+| 📊 **Auto Slide** | Marp互換のプレゼンテーションスライド自動生成 |
+| 📝 **Chronicler Article** | Zenn向け技術記事の自動生成 |
+| 📋 **Master Spec** | 技術面接対応のプロダクトFAQ資料 |
+
+### Agentic な工夫
+
+- **Multi-Agent Pipeline**: CTO Agent（技術分析）、UI Architect Agent（画面再現）、Creative Director Agent（戦略立案）の3つのAIエージェントが並列で動作
+- **UI Reconstruction (SDUI)**: ソースコードからFlutter Widget Treeを推論し、実際にレンダリング可能なUIを再現
+- **Context Weaving**: コードの依存関係やコメントから「なぜこの技術を選んだのか」を推論
 
 ---
 
-## 🚀 セットアップ
+## 🏗 アーキテクチャ
 
-### 前提条件
+```
+┌──────────────────────────────────────────────────┐
+│                   Amu Studio                      │
+│    ┌──────────┐  ┌──────────┐  ┌──────────────┐  │
+│    │ Wizard   │→ │ Analyzer │→ │ PR Center    │  │
+│    │(入力)    │  │(解析)    │  │(出力)        │  │
+│    └──────────┘  └──────────┘  └──────────────┘  │
+└──────────────────────────────────────────────────┘
+         │                │
+    ┌────▼────┐     ┌─────▼──────┐
+    │ GitHub  │     │ Gemini API │
+    │   API   │     │ (Vertex AI)│
+    └─────────┘     └────────────┘
+```
 
-- Flutter SDK 3.x+
-- macOS (デスクトップアプリとして動作)
-- ffmpeg (`brew install ffmpeg`)
-- Gemini API Key ([Google AI Studio](https://aistudio.google.com/) で取得)
+### Google Cloud 製品の利用
+
+| 製品 | 用途 |
+|---|---|
+| **Gemini API (Vertex AI)** | コード解析、UI再現、記事/スライド/動画脚本の生成（Multi-Agent） |
+| **Firebase Hosting** | Webアプリケーションのデプロイ・公開 |
+| **GitHub API** | リポジトリからソースコード・ファイル構造を取得 |
+
+---
+
+## 🌐 デモ {#デモ}
+
+> **Live Demo URL**: [https://aith-ai-tutor.web.app](https://aith-ai-tutor.web.app)
+
+### 使い方
+
+1. Gemini API キーを入力
+2. 言語を選択（日本語 / English）
+3. GitHubリポジトリURLを入力（例: `https://github.com/user/repo`）
+4. 「Next」をクリック → AIが自動で解析・生成を開始
+
+---
+
+## 🛠 セットアップ {#セットアップ}
+
+### 必要環境
+
+- Flutter SDK 3.2.0+
+- Gemini API Key（[Google AI Studio](https://aistudio.google.com/)で取得）
 
 ### インストール
 
@@ -34,45 +100,68 @@ cd amu
 flutter pub get
 ```
 
-### 起動
+### 実行
 
 ```bash
-# Dashboard から起動
-flutter run lib/ui/dashboard.dart -d macos
+# Web版
+flutter run -d chrome
 
-# または直接 Studio を起動
-flutter run lib/preview.dart -d macos
+# Desktop版 (macOS)
+flutter run -d macos
+```
+
+> ⚠️ Desktop版ではローカルフォルダの直接指定も可能です。
+> Web版ではGitHubリポジトリURLのみ対応しています。
+
+---
+
+## 📁 プロジェクト構成
+
+```
+amu/
+├── lib/
+│   ├── main.dart                    # エントリーポイント
+│   ├── ui/
+│   │   ├── dashboard.dart           # トップ画面
+│   │   ├── wizard/project_wizard.dart  # 入力ウィザード
+│   │   └── preview/interactive_app.dart # SDUI UIプレビュー
+│   ├── studio/amu_studio.dart       # メインスタジオUI
+│   ├── logic/
+│   │   ├── gemini_service.dart      # Gemini API連携
+│   │   ├── project_source.dart      # ProjectSource抽象化
+│   │   ├── local_project_source.dart # ローカルファイル読取
+│   │   └── ui_detector.dart         # メイン画面自動検出
+│   ├── director/
+│   │   ├── storyboard_generator.dart # 動画脚本生成
+│   │   ├── article_generator.dart   # Zenn記事生成
+│   │   ├── slide_generator.dart     # スライド生成
+│   │   └── spec_generator.dart      # 仕様書生成
+│   └── engine/                      # 動画レンダリングエンジン
+├── assets/
+│   ├── audio/                       # BGM素材
+│   └── photo/                       # アイコン・画像素材
+├── web/                             # Webビルド設定
+└── pubspec.yaml
 ```
 
 ---
 
-## 📂 プロジェクト構成
+## 🔒 セキュリティ
 
-```
-lib/
-├── director/       # ストーリーボード生成ロジック
-├── engine/         # フレームレンダラー、動画エクスポーター
-├── logic/          # Gemini AI サービス、ローカライズ
-├── studio/         # Amu Studio 本体 (UI + タイムライン)
-├── ui/             # Dashboard, Wizard, Preview
-└── preview.dart    # エントリポイント
-```
+- APIキーはブラウザのメモリ内のみで保持（Web版）
+- Desktop版では `amu_output/config.json` にローカル保存（`.gitignore` 済み）
+- GitHubリポジトリは **パブリックリポジトリのみ** 対応（認証不要のAPI利用）
 
 ---
 
-## 🔑 環境変数
-
-API キーは Wizard 画面で入力するか、`amu_output/config.json` に保存されます。  
-ハードコードは **厳禁** です。
-
----
-
-## 📄 ライセンス
+## 📜 ライセンス
 
 MIT License
 
 ---
 
-## 🤝 コントリビューション
+## 🙏 謝辞
 
-Issue や Pull Request 歓迎です！
+- [Google Gemini API](https://ai.google.dev/) — マルチモーダルAI基盤
+- [Flutter](https://flutter.dev/) — クロスプラットフォームUI
+- [Google Cloud Japan AI Hackathon vol.4](https://googlecloudjapanai4.devpost.com/) — 開発のきっかけ

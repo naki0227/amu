@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'dart:ui' as ui;
 import 'dart:convert';
 import 'dart:io';
@@ -12,6 +13,9 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:amu/logic/project_storage.dart';
 import 'package:amu/engine/video_exporter.dart';
 import 'package:amu/logic/localization.dart';
+import 'package:amu/director/article_generator.dart';
+import 'package:amu/director/slide_generator.dart';
+import 'package:amu/director/spec_generator.dart';
 import 'package:amu/ui/preview/interactive_app.dart';
 import 'package:amu/ui/wizard/project_wizard.dart';
 
@@ -40,7 +44,15 @@ class AmuStudioApp extends StatelessWidget {
 
 class AmuStudio extends StatefulWidget {
   final Map<String, dynamic>? initialStoryboard;
-  const AmuStudio({super.key, this.initialStoryboard});
+  final String? projectPath;
+  final List<String> missingAssets;
+
+  const AmuStudio({
+      super.key, 
+      this.initialStoryboard, 
+      this.projectPath,
+      this.missingAssets = const []
+  });
 
   @override
   State<AmuStudio> createState() => _AmuStudioState();
@@ -82,6 +94,12 @@ class _AmuStudioState extends State<AmuStudio> with TickerProviderStateMixin {
   // Frame Capture State
   final GlobalKey _previewKey = GlobalKey();
 
+  // PR Center State
+  bool _isGeneratingPR = false;
+  String? _prResult;
+  String? _currentAssetType;
+  final Map<String, String> _generatedAssets = {};
+
   @override
   void initState() {
     super.initState();
@@ -101,6 +119,105 @@ class _AmuStudioState extends State<AmuStudio> with TickerProviderStateMixin {
     _audioPlayer.setVolume(_volume); // Apply initial volume
     
     _loadInitialProject(); 
+
+    // Show Missing Assets Dialog
+    if (widget.missingAssets.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+            _showMissingAssetsDialog();
+        });
+    }
+  }
+
+  void _showMissingAssetsDialog() {
+      showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+              backgroundColor: const Color(0xFF1E293B),
+              title: const Row(children: [
+                  Icon(Icons.lightbulb, color: Colors.amberAccent),
+                  SizedBox(width: 8),
+                  Text("Pro Tip: Gap Analysis", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
+              ]),
+              content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                      const Text("We generated the best video with your current assets, but adding these would make it even better:", style: TextStyle(color: Colors.white70)),
+                      const SizedBox(height: 16),
+                      ...widget.missingAssets.map((e) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                  const Icon(Icons.add_a_photo, color: Colors.indigoAccent, size: 16),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: Text(e, style: const TextStyle(color: Colors.white))),
+                              ],
+                          ),
+                      )),
+                  ],
+              ),
+              actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Maybe Later")),
+                  ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.indigoAccent, foregroundColor: Colors.white),
+                      onPressed: () => Navigator.pop(ctx), 
+                      child: const Text("Got it")
+                  ),
+              ],
+          )
+      );
+  }
+
+  Future<void> _generateAsset(String type, {bool force = false}) async {
+      if (_storyboard == null) return;
+      
+      setState(() {
+         _currentAssetType = type;
+         // If cached and not forcing, show immediately
+         if (!force && _generatedAssets.containsKey(type)) {
+             _prResult = _generatedAssets[type];
+             _isGeneratingPR = false;
+             return;
+         }
+         _isGeneratingPR = true;
+         _prResult = null;
+      });
+      
+      if (!force && _generatedAssets.containsKey(type)) return;
+
+      try {
+          final file = File('amu_output/config.json');
+          if (!await file.exists()) throw Exception("API Key not found. Please run Wizard first.");
+          final config = jsonDecode(await file.readAsString());
+          final apiKey = config['apiKey'] as String;
+          
+          String content = "";
+          final dna = _storyboard!;
+          
+          final language = _storyboard?['language'] ?? 'English';
+          
+          if (type == 'article') {
+              final generator = ArticleGenerator(apiKey);
+              content = await generator.generateArticle(dna, "Source code suggests a Flutter app using Riverpod...", language: language); 
+          } else if (type == 'slide') {
+              final generator = SlideGenerator(apiKey);
+              content = await generator.generateSlides(dna, language: language);
+          } else if (type == 'spec') {
+              final generator = SpecGenerator(apiKey);
+              content = await generator.generateSpec(dna, "Source code suggests a Flutter app using Riverpod...", language: language);
+          }
+          
+          setState(() {
+              _prResult = content;
+              _generatedAssets[type] = content;
+          });
+          
+      } catch (e) {
+          setState(() => _prResult = "Error: $e");
+      } finally {
+          setState(() => _isGeneratingPR = false);
+      }
   }
 
   @override
@@ -199,6 +316,19 @@ class _AmuStudioState extends State<AmuStudio> with TickerProviderStateMixin {
       _storyboard = sb;
       _hasProject = true;
       _isLoading = false;
+      _generatedAssets.clear();
+      _prResult = null;
+      
+      // Load Pre-Generated Assets (User Request: "Created from beginning")
+      if (sb['cached_article'] != null) {
+          _generatedAssets['article'] = sb['cached_article'];
+      }
+      if (sb['cached_slide'] != null) {
+          _generatedAssets['slide'] = sb['cached_slide'];
+      }
+      if (sb['cached_spec'] != null) {
+          _generatedAssets['spec'] = sb['cached_spec'];
+      }
       
       // Update Controller Duration
       final int duration = sb['durationSeconds'] ?? 33;
@@ -342,22 +472,13 @@ class _AmuStudioState extends State<AmuStudio> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    // 1. Extract Brand Palette
-    Color bgColor = const Color(0xFF0F172A); // Default Slate 900
-    Color accentColor = const Color(0xFF6366F1); // Default Indigo 500
+    // 1. Extract Brand Palette (Only for preview, not for Studio UI)
+    const Color bgColor = Color(0xFF0F172A); // Default Slate 900
+    const Color accentColor = Color(0xFF6366F1); // Default Indigo 500
     
-    if (_storyboard != null && _storyboard!['brandPalette'] != null) {
-       final bgHex = _storyboard!['brandPalette']['background'];
-       if (bgHex != null) {
-         try {
-           bgColor = Color(int.parse(bgHex.replaceAll('#', '0xFF')));
-           // Simple complement or fixed accent for now, or extract if available
-           // accentColor = Colors.white; 
-         } catch (e) {
-           // Ignore parse error
-         }
-       }
-    }
+    // Note: We used to override bgColor with storyboard['brandPalette']['background']
+    // but that caused the entire Studio UI to turn white if the analyzed app was white.
+    // We should keep the Studio UI dark and professional.
 
     return Theme(
       data: ThemeData(
@@ -469,7 +590,7 @@ class _AmuStudioState extends State<AmuStudio> with TickerProviderStateMixin {
                         // RIGHT PANEL: INSPECTOR / ATTRIBUTE EDITOR
                         if (_showInteractivePanel)
                           Container(
-                            width: 320,
+                            width: 400, // Fixed width for stability
                             decoration: BoxDecoration(
                               color: bgColor, // Match brand
                               border: Border(left: BorderSide(color: Colors.white.withOpacity(0.1))),
@@ -488,7 +609,11 @@ class _AmuStudioState extends State<AmuStudio> with TickerProviderStateMixin {
                                  ),
                                  // Content
                                  Expanded(
-                                   child: _activeTabIndex == 0 ? _buildComposeView() : _buildAnalyzeView(),
+                                   child: _activeTabIndex == 0 
+                                      ? _buildComposeView() 
+                                      : (_activeTabIndex == 1 
+                                          ? _buildAnalyzeView() 
+                                          : _buildPRCenter()),
                                  ),
                               ],
                             ),
@@ -525,6 +650,7 @@ class _AmuStudioState extends State<AmuStudio> with TickerProviderStateMixin {
           _buildSideIcon(Icons.layers, 1),
           _buildSideIcon(Icons.text_fields, 2),
           _buildSideIcon(Icons.audiotrack, 3),
+          _buildSideIcon(Icons.campaign, 4), // PR Center
           const Spacer(),
           IconButton(
             icon: const Icon(Icons.output, color: Colors.greenAccent),
@@ -532,11 +658,118 @@ class _AmuStudioState extends State<AmuStudio> with TickerProviderStateMixin {
             onPressed: _saveProject,
           ),
           const SizedBox(height: 16),
-          _buildSideIcon(Icons.settings, 4),
+          const SizedBox(height: 16),
+          _buildSideIcon(Icons.settings, 5),
           const SizedBox(height: 16),
         ],
       ),
     );
+  }
+
+  Widget _buildPRCenter() {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        constraints: const BoxConstraints(maxWidth: 800),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("PR Automation Center", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              const Text("Generate marketing assets.", style: TextStyle(color: Colors.white54, fontSize: 14)),
+              const SizedBox(height: 24),
+              
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                   _buildPRCard("Article", "Zenn", Icons.article, Colors.blueAccent, () => _generateAsset('article')),
+                   _buildPRCard("Slides", "Marp", Icons.slideshow, Colors.orangeAccent, () => _generateAsset('slide')),
+                   _buildPRCard("Spec", "QA", Icons.library_books, Colors.purpleAccent, () => _generateAsset('spec')),
+                ],
+              ),
+               const SizedBox(height: 24),
+
+              Container(
+                 width: double.infinity,
+                 height: 300,
+                 padding: const EdgeInsets.all(16),
+                 decoration: BoxDecoration(
+                   color: Colors.black54,
+                   borderRadius: BorderRadius.circular(16),
+                   border: Border.all(color: Colors.white10),
+                 ),
+                 child: _isGeneratingPR 
+                    ? const Center(child: CircularProgressIndicator())
+                    : SingleChildScrollView(
+                        child: SelectableText(
+                          _prResult ?? "Select an asset to generate...",
+                          style: const TextStyle(color: Colors.white70, fontFamily: 'monospace'),
+                        ),
+                      ),
+              ),
+            if (_prResult != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: Wrap(
+                   alignment: WrapAlignment.end,
+                   spacing: 16,
+                   runSpacing: 8,
+                   children: [
+                       TextButton.icon(
+                           icon: const Icon(Icons.refresh, color: Colors.white70),
+                           label: const Text("Regenerate", style: TextStyle(color: Colors.white70)),
+                           onPressed: () {
+                               if (_currentAssetType != null) {
+                                  _generateAsset(_currentAssetType!, force: true);
+                               }
+                           },
+                       ),
+                       TextButton.icon(
+                           icon: const Icon(Icons.copy, color: Colors.white70),
+                           label: const Text("Copy to Clipboard", style: TextStyle(color: Colors.white70)),
+                           onPressed: () {
+                               Clipboard.setData(ClipboardData(text: _prResult!));
+                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Copied!")));
+                           },
+                       ),
+                   ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+  Widget _buildPRCard(String title, String subtitle, IconData icon, Color color, VoidCallback onTap) {
+      return SizedBox(
+          width: 220,
+          height: 180,
+          child: InkWell(
+              onTap: onTap,
+              child: Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: color.withOpacity(0.5)),
+                  ),
+                  child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                          Icon(icon, size: 48, color: color),
+                          const SizedBox(height: 16),
+                          Text(title, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                          Text(subtitle, style: const TextStyle(color: Colors.white54)),
+                      ],
+                  ),
+              ),
+          ),
+      );
   }
 
   Widget _buildTransportControls() {
@@ -587,7 +820,17 @@ class _AmuStudioState extends State<AmuStudio> with TickerProviderStateMixin {
       onTap: () {
         setState(() {
           _selectedToolIndex = index;
-          _showInteractivePanel = true; // Open panel when tool selected
+          if (index == 4) {
+             _activeTabIndex = -1; // Special ID for PR Center? Or just use tool index.
+             // Actually, the main view logic above checks `_selectedToolIndex == 4`
+             // But existing logic uses `_activeTabIndex`.
+             // Let's force `_activeTabIndex` to something else or just rely on tool index.
+          } else if (index == 0) {
+             _activeTabIndex = 0; // Compose
+             _showInteractivePanel = true;
+          } else {
+             _showInteractivePanel = true;
+          }
         });
       },
       child: Container(

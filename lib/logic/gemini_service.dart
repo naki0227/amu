@@ -1,6 +1,7 @@
-import 'dart:io';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'dart:convert';
+import 'package:amu/logic/ui_detector.dart';
+import 'package:amu/logic/project_source.dart';
 
 class GeminiService {
   final String apiKey;
@@ -8,112 +9,265 @@ class GeminiService {
 
   GeminiService(this.apiKey, {this.modelName = 'gemini-2.5-pro'});
 
-  Future<Map<String, dynamic>> analyzeProject(String sourcePath, {String language = 'English'}) async {
-    final dir = Directory(sourcePath);
-    if (!await dir.exists()) {
-      throw Exception("Source directory not found: $sourcePath");
-    }
+  Future<Map<String, dynamic>> analyzeProject(ProjectSource source, {String language = 'English'}) async {
 
-    // 1. Weave Context (Read Files)
-    final buffer = StringBuffer();
-    buffer.writeln("Analyze the following Flutter project code and extract the Product DNA.");
-    buffer.writeln("Output ONLY valid JSON matching this schema: { \"product_name\": string, \"appName\": string, \"ui_type\": \"dashboard\" | \"feed\" | \"chat\" | \"landing\" | \"profile\" | \"list\", \"platform\": \"mobile\" | \"web\" | \"desktop\", \"brandPalette\": { \"background\": string, \"surface\": string, \"primary\": string, \"onPrimary\": string }, \"hook_main\": string, \"hook_sub\": string, \"features\": string[], \"primary_action\": string, \"widget_tree\": { \"type\": \"Scaffold\", \"appBar\": { \"title\": string }, \"body\": { \"type\": string, \"children\": [], \"child\": {}, \"text\": string, \"style\": {}, \"decoration\": {}, \"src\": string, \"icon\": string }, \"floatingActionButton\": {}, \"bottomNavigationBar\": {} }, \"overlay_broll\": string, \"overlay_feature1\": string, \"overlay_feature2\": string, \"outro_sub\": string }");
+    // 1. Smarter Context Collection (Platform Agnostic)
+    final allPaths = await source.getFilePaths();
     
-    // ONE-SHOT EXAMPLE
-    buffer.writeln("IMPORTANT: The 'widget_tree' MUST be a high-fidelity JSON representation of the main screen's widget tree. Use these keys: type ('Column', 'Row', 'ListView', 'Container', 'Card', 'Text', 'Image', 'Icon', 'Stack', 'Center', 'Padding'), children (array), child (object), text, style ({fontSize, fontWeight, color}), decoration ({color, borderRadius, border, boxShadow}), padding (int or 'x,y'), margin, mainAxisAlignment, crossAxisAlignment.");
-    buffer.writeln("EXAMPLE widget_tree: { \"type\": \"Scaffold\", \"appBar\": { \"title\": \"My App\" }, \"body\": { \"type\": \"Column\", \"children\": [ { \"type\": \"Container\", \"height\": 200, \"color\": \"#FF0000\", \"child\": { \"type\": \"Center\", \"child\": { \"type\": \"Text\", \"text\": \"Hello\", \"style\": { \"color\": \"white\", \"fontSize\": 24, \"fontWeight\": \"bold\" } } } } ] } }");
-    
-    buffer.writeln("IMPORTANT: All text in the JSON (hook_main, hook_sub, features, widget_tree text) MUST be in $language.");
-    buffer.writeln("\n--- SOURCE CODE ---\n");
+    List<String> priorityPaths = [];
+    List<String> otherPaths = [];
 
-    print("Analyzing Project at: $sourcePath");
-
-    final files = dir.listSync(recursive: true).whereType<File>().where((f) {
-      final p = f.path.toLowerCase();
-      // Heuristic: Read main code files
-      if (p.contains('test/')) return false; // Skip tests
-      if (p.contains('.dart_tool/') || p.contains('build/') || p.contains('.git/')) return false; // Skip build/git
-
-      if (p.endsWith('.dart') || p.endsWith('pubspec.yaml') || 
-          p.endsWith('.xml') || p.endsWith('.gradle') || 
-          p.endsWith('.swift') || p.endsWith('.kt') ||
-          p.endsWith('.json') || p.endsWith('.md')) return true;
-      return false;
-    }).take(20); // Limit context window for speed
-
-    print("Found ${files.length} context files.");
-
-    if (files.isEmpty) {
-       print("No context files found. Returning fallback.");
-       return {
-        "product_name": "Project Analysis",
-        "appName": "App Generated",
-        "platform": "mobile",
-        "brandPalette": { "background": "#1E293B" },
-        "hook_main": "Analysis Failed",
-        "hook_sub": "No source files found at $sourcePath",
-        "features": ["Source directory appeared empty"]
-      };
-    }
-
-    for (var f in files) {
-       try {
-         final content = await f.readAsString();
-         buffer.writeln("File: ${f.path.split('/').last}");
-         buffer.writeln("```${f.path.split('.').last}"); // Use extension as lang
-         buffer.writeln(content.length > 2000 ? content.substring(0, 2000) + "... [truncated]" : content);
-         buffer.writeln("```\n");
-       } catch (e) {
-         // Skip binary or unreadable
+    for (var p in allPaths) {
+       final lower = p.toLowerCase();
+       if (lower.contains('test/') || lower.contains('.dart_tool/') || lower.contains('build/') || lower.contains('.git/') || lower.contains('/checkouts/') || lower.contains('amu_output/')) continue;
+       
+       if (lower.endsWith('pubspec.yaml')) {
+          priorityPaths.insert(0, p);
+       } else if (lower.endsWith('main.dart')) {
+          priorityPaths.add(p);
+       } else if (lower.endsWith('.dart') && (lower.contains('/models/') || lower.contains('/ui/') || lower.contains('/screens/'))) {
+          priorityPaths.add(p);
+       } else if (lower.endsWith('.dart') || lower.endsWith('.tsx') || lower.endsWith('.jsx') || lower.endsWith('.vue') || lower.endsWith('.html') || lower.endsWith('.css')) {
+          otherPaths.add(p);
        }
     }
-
-      // 2. Discover Assets (Images for B-Roll)
-      final List<String> assets = [];
-      try {
-        final allFiles = dir.listSync(recursive: true).whereType<File>();
-        for (var f in allFiles) {
-          final p = f.path.toLowerCase();
-          if (p.endsWith('.png') || p.endsWith('.jpg') || p.endsWith('.jpeg') || p.endsWith('.webp')) {
-
-            // Store ABSOLUTE path for Image.file() loading
-            assets.add(f.path);
-          }
-          if (assets.length >= 10) break;
-        }
-      } catch (e) {
-        print("Asset scan error: $e");
-      }
-
-      // 3. Call Gemini
-      final model = GenerativeModel(model: modelName, apiKey: apiKey);
-      final content = [Content.text(buffer.toString())];
-      
-      try {
-        final response = await model.generateContent(content);
-      final text = response.text;
-      
-      if (text == null) throw Exception("Empty response from AI");
-      
-      // Clean JSON (remove markdown fences)
-      final jsonString = text.replaceAll('```json', '').replaceAll('```', '').trim();
-      final Map<String, dynamic> dna = jsonDecode(jsonString);
-      
-      // Add discovered assets to DNA
-      dna['discovered_assets'] = assets;
-      return dna;
-    } catch (e) {
-      print("Gemini Error: $e");
-      // Fallback Generic if AI fails
-      return {
-        "product_name": "Project Analysis",
-        "appName": "App Generated",
-        "platform": "mobile",
-        "brandPalette": { "background": "#1E293B" },
-        "hook_main": "Analysis Failed",
-        "hook_sub": "Check your source code or API key.",
-        "features": ["Feature Analysis Empty"]
-      };
+    
+    // Take top 50 files
+    final totalPaths = [...priorityPaths, ...otherPaths].take(50).toList();
+    final buffer = StringBuffer();
+    for (var path in totalPaths) {
+       try {
+         final content = await source.readFile(path);
+         final basename = path.split('/').last;
+         final ext = path.split('.').last;
+         buffer.writeln("File: $basename");
+         buffer.writeln("```$ext");
+         buffer.writeln(content.length > 5000 ? content.substring(0, 5000) + "... [truncated]" : content);
+         buffer.writeln("```\n");
+       } catch (e) {}
     }
+    final sourceContext = buffer.toString();
+
+    // 3. Discover Assets
+    final List<String> assets = [];
+    try {
+      for (var p in allPaths) {
+        final lower = p.toLowerCase();
+        if (lower.contains('/checkouts/') || lower.contains('amu_output/')) continue;
+        if (lower.contains('icon.png')) continue; // Skip icon
+        if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.webp')) {
+          assets.add(p);
+        }
+        if (assets.length >= 10) break;
+      }
+    } catch (e) {
+      print("Asset scan error: $e");
+    }
+
+    // 3. TARGETED UI EXTRACTION (Polyglot)
+    String uiSourceContext = "";
+    String detectedStack = "Unknown";
+    
+    try {
+        final detector = UiDetector();
+        final mainScreenPath = await detector.findMainScreenPath(source);
+        
+        if (mainScreenPath != null) {
+            uiSourceContext = await source.readFile(mainScreenPath);
+            print("UI Detector: Found main screen at $mainScreenPath");
+            
+            if (mainScreenPath.endsWith('.dart')) detectedStack = "Flutter";
+            else if (mainScreenPath.endsWith('.tsx') || mainScreenPath.endsWith('.jsx')) detectedStack = "React";
+            else if (mainScreenPath.endsWith('.html')) detectedStack = "Web/HTML";
+            else if (mainScreenPath.endsWith('.vue')) detectedStack = "Vue";
+        } else {
+            uiSourceContext = sourceContext;
+            detectedStack = "General Codebase";
+        }
+    } catch (e) {
+        uiSourceContext = sourceContext;
+    }
+
+    // --- PHASE 1: PARALLEL INVESTIGATION ---
+    
+    // Agent A: CTO (Technology & Logic) + [NEW] QA Fact Sheet
+    final ctoPrompt = '''
+Analyze the following project (Stack: $detectedStack).
+Role: CTO / Technical Auditor.
+Goal: Identify the App Type, Tech Stack, Core Features, AND generate a "Fact Sheet" (Q&A).
+
+Output ONLY valid JSON: 
+{ 
+  "product_name": string, 
+  "app_type": "dashboard" | "feed" | "chat" | "tool" | "game", 
+  "tech_stack": string[], 
+  "core_features": string[],
+  "primary_benefit": string,
+  "qa_context": {
+      "core_question": string,
+      "core_answer": string,
+      "technical_highlight": string
+  }
+}
+\n--- SOURCE CODE ---\n$sourceContext
+''';
+
+    // Agent B: UI Architect (Visuals & Structure)
+    // Tailored prompt based on stack
+    String uiInstructions = "";
+    if (detectedStack == "Flutter") {
+       uiInstructions = "Transpile this Flutter Widget Tree 1:1 into JSON. Map 'Column' to 'Column', 'Text' to 'Text'.";
+    } else if (detectedStack == "React") {
+       uiInstructions = "Transpile this React Component Tree into a generic JSON Widget Tree. Map 'div' to 'Column', 'span/p' to 'Text', 'img' to 'Image'.";
+    } else {
+       uiInstructions = "Transpile this HTML/Code structure into a generic JSON Widget Tree. Approximate layout using 'Column' and 'Row'.";
+    }
+
+    final uiPrompt = '''
+Analyze the following $detectedStack UI Code.
+Role: Adaptive UI Transpiler.
+Goal: Recreate the source UI visuals in Flutter JSON.
+Rules:
+1. FIDELITY: Prioritize exact matching of structure (Row/Column/Grid) and content (Text/Images).
+2. STYLE: Extract EXACT HEX CODES (#RRGGBB) from source (e.g. CSS vars, const Color). If missing, use "Apple Human Interface" guidelines.
+3. RECOVERY: If the source is partial/broken, INFER the intended layout (e.g. a list of items -> ListView).
+4. SAFETY: Do not generate "Unknown" widgets. Stick to the standard list.
+
+Output ONLY valid JSON:
+{
+  "brandPalette": { "background": "#hex", "surface": "#hex", "primary": "#hex", "onPrimary": "#hex", "secondary": "#hex" },
+  "widget_tree": { 
+      "type": "Scaffold", 
+      "appBar": { "title": string, "elevation": 0, "centerTitle": true }, 
+      "body": { 
+          "type": "Column/Row/Stack/ListView/GridView/Wrap/Container/Text/Image/Icon/Button/Input", 
+          "children": [], 
+          "child": {}, 
+          "text": string, 
+          "src": string, 
+          "icon": string, 
+          "style": { "color": "#hex", "fontSize": 16, "fontWeight": "bold/normal", "opacity": 1.0 }, 
+          "decoration": { 
+              "color": "#hex", 
+              "gradient": { "colors": ["#hex", "#hex"], "begin": "topLeft", "end": "bottomRight" },
+              "borderRadius": 0, 
+              "boxShadow": [{ "color": "#00000022", "blur": 4, "offset": [0, 2] }],
+              "border": { "color": "#hex", "width": 1 }
+          },
+          "crossAxisCount": 2, 
+          "mainAxisAlignment": "start/center/end/spaceBetween",
+          "crossAxisAlignment": "start/center/end/stretch"
+      }
+  }
+}
+IMPORTANT: 
+- Replicate the VISUAL RESULT, not just the code structure.
+- If text is missing in source, use placeholders like "Lorem Ipsum".
+- **CRITICAL**: The "Target UI File" might just be an entry point. SEARCH "FULL PROJECT CONTEXT" for the actual widget definitions.
+\n--- TARGET UI FILE SOURCE ---\n$uiSourceContext
+\n--- FULL PROJECT CONTEXT (Look here for definitions) ---\n$sourceContext
+''';
+
+    // Execute Parallel
+    final results = await Future.wait([
+      _generateJson(ctoPrompt, temperature: 0.2), 
+      _generateJson(uiPrompt, temperature: 0.2)
+    ]);
+    
+    final ctoData = results[0];
+    final uiData = results[1];
+    
+    // --- PHASE 2: STRATEGIC SYNTHESIS (The "Four Divisions") ---
+    
+    final masterPrompt = '''
+Role: Creative Director & Product Strategist.
+Input Data:
+- Product: ${ctoData['product_name']} (${ctoData['app_type']})
+- Stack: ${ctoData['tech_stack']}
+- Features: ${ctoData['core_features']}
+- UI Style: ${uiData['brandPalette']}
+- Technical Fact (Q&A): ${ctoData['qa_context']}
+- Available Image Assets: ${assets.join(', ')} (PRIORITIZE USING THESE EXACT PATHS IN storyboard/scenes logic)
+
+Task: Generate a Master Plan for the product launch, divided into 4 strategies.
+
+Output ONLY valid JSON matching this schema:
+{
+  "marketing_angle": {
+      "hook_main": string,
+      "hook_sub": string,
+      "overlay_broll": string,
+      "overlay_feature1": string,
+      "overlay_feature2": string,
+      "outro_sub": string
+  },
+  "cm_storyboard": {
+      "scenes": [
+        {
+          "id": string,
+          "type": "title" | "image_display" | "text_overlay" | "widget",
+          "duration": number,
+          "text": string,
+          "subtext?": string,
+          "overlayText?": string,
+          "assetPath?": string,
+          "camera?": { "start": {}, "end": {} }
+        }
+      ],
+      "missing_assets_instruction": string[]
+  },
+  "article_context": {
+      "topic": string,
+      "target_audience": string,
+      "key_takeaways": string[]
+  },
+  "slide_context": {
+      "title": string,
+      "chapters": string[]
+  }
+}
+IMPORTANT: 'missing_assets_instruction' should list specific assets the user needs to provide based on the storyboard (e.g., "Screenshot of Login Screen", "Demo Video of Feature X").
+IMPORTANT: All text MUST be in $language.
+''';
+
+    final masterPlan = await _generateJson(masterPrompt, temperature: 0.7);
+
+    // --- FINAL MERGE ---
+    return {
+      ...ctoData,
+      ...uiData,
+      ...masterPlan['marketing_angle'],
+      "scenes": masterPlan['cm_storyboard']?['scenes'] ?? [],
+      "missing_assets_instruction": masterPlan['cm_storyboard']?['missing_assets_instruction'] ?? [],
+      "article_context": masterPlan['article_context'],
+      "slide_context": masterPlan['slide_context'],
+      "qa_context": ctoData['qa_context'], // Now comes from CTO (Fact Sheet)
+      "language": language,
+      "discovered_assets": assets
+    };
+  }
+
+  Future<Map<String, dynamic>> _generateJson(String prompt, {double temperature = 0.5}) async {
+      final model = GenerativeModel(model: modelName, apiKey: apiKey, generationConfig: GenerationConfig(temperature: temperature));
+      final response = await model.generateContent([Content.text(prompt)]);
+      final text = response.text ?? '';
+      // Extract JSON from response (may be wrapped in ```json ... ```)
+      final jsonStr = text.replaceAll(RegExp(r'^```json\s*', multiLine: true), '').replaceAll(RegExp(r'^```\s*$', multiLine: true), '').trim();
+      try {
+        return jsonDecode(jsonStr);
+      } catch (e) {
+        print("JSON Parse Error: $e\nRaw: ${jsonStr.substring(0, (jsonStr.length > 200 ? 200 : jsonStr.length))}");
+        return {};
+      }
+  }
+
+  // Utility for direct text generation
+  Future<String> generateContent(String prompt) async {
+      final model = GenerativeModel(model: modelName, apiKey: apiKey, generationConfig: GenerationConfig(
+          temperature: 0.7,
+          maxOutputTokens: 8192,
+      ));
+      final response = await model.generateContent([Content.text(prompt)]);
+      return response.text ?? '';
   }
 }
