@@ -69,7 +69,7 @@ graph LR
 
     subgraph "Google Cloud"
         F["Gemini 2.5 Pro API"]
-        G["Firebase Hosting"]
+        G["Cloud Run"]
     end
 
     subgraph "GitHub"
@@ -389,7 +389,7 @@ import 'dart:io' if (dart.library.html) 'dart:io';
 | **Flutter / Dart** | クロスプラットフォームUI（Desktop + Web） |
 | **Gemini 2.5 Pro** | Multi-Agent コード解析 & コンテンツ生成 |
 | **GitHub REST API** | Web版：リポジトリからソースコード取得 |
-| **Firebase Hosting** | Webアプリのデプロイ |
+| **Cloud Run** | Webアプリのデプロイ（nginx:alpine コンテナ） |
 | **google_generative_ai** | Gemini API Dartクライアント |
 | **http** | GitHub API / raw content 取得 |
 
