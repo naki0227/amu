@@ -1,0 +1,24 @@
+# Override .gitignore for Cloud Build - we NEED build/web
+.dart_tool/
+.pub-cache/
+.pub/
+.git/
+.firebase/
+.idea/
+amu_output/
+checkouts/
+*.env
+api_keys.json
+config.json
+.gemini_key
+firebase-debug.log
+android/
+ios/
+macos/
+linux/
+windows/
+test/
+zenn_writing_guidelines.md
+
+# Explicitly DO NOT ignore build/web (needed for Dockerfile)
+!build/web/

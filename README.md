@@ -74,7 +74,7 @@
 
 ## 🌐 デモ {#デモ}
 
-> **Live Demo URL**: [https://aith-ai-tutor.web.app](https://aith-ai-tutor.web.app)
+> **Live Demo URL**: [https://amu-438780240843.asia-northeast1.run.app](https://amu-438780240843.asia-northeast1.run.app)
 
 ### 使い方
 
