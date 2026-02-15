@@ -50,7 +50,50 @@ https://github.com/your/awesome-project
 
 この退屈という悪魔を倒すため、AIツール「**Amu（アム）**」を錬成することにした。シェルスクリプトで十分？ 笑わせるな。これは単なるテキスト生成じゃない。**プロジェクトの魂を抽出し、4種のコンテンツに再構成する**という、もっと高尚な儀式だ。
 
+### システム全体像
+
+まずはAmuの全体アーキテクチャを俯瞰しよう。
+
+```mermaid
+graph LR
+    subgraph "Input Layer"
+        A["🖥 Desktop: フォルダ選択"]
+        B["🌐 Web: GitHub URL入力"]
+    end
+
+    subgraph "Amu (Flutter App)"
+        C["ProjectSource 抽象化"]
+        D["UiDetector<br/>(メイン画面自動検出)"]
+        E["GeminiService<br/>(Multi-Agent Pipeline)"]
+    end
+
+    subgraph "Google Cloud"
+        F["Gemini 2.5 Pro API"]
+        G["Firebase Hosting"]
+    end
+
+    subgraph "GitHub"
+        H["REST API v3<br/>(Git Trees / Raw Content)"]
+    end
+
+    subgraph "Output"
+        I["🎬 CM動画"]
+        J["📊 スライド"]
+        K["📝 記事"]
+        L["📋 仕様書"]
+    end
+
+    A --> C
+    B --> H --> C
+    C --> D --> E
+    E <--> F
+    E --> I & J & K & L
+    G -.->|"デプロイ"| B
+```
+
 コアとなる頭脳にはGoogleの **Gemini 2.5 Pro** を選んだ。ただし、1回のAPI呼び出しで全てをやらせる「一極集中」ではない。**3つの専門エージェントが並列で動作する Multi-Agent 設計**を採用した。
+
+### Multi-Agent パイプライン
 
 ```mermaid
 graph TD
