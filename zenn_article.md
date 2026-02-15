@@ -336,7 +336,7 @@ final totalPaths = [...priorityPaths, ...otherPaths].take(50).toList();
 
 ## Result: GitHub URLを入れるだけ
 
-@[youtube](mt19CqX6Bmw)
+@[youtube](maxRawsdCHE)
 
 ### Before:
 無数のファイルが散らばる、混沌としたソースコードの海。そして誰にも更新されず、化石となった `README.md`。
