@@ -30,7 +30,7 @@ import 'package:amu/director/storyboard_generator.dart';
       storyboard = jsonDecode(projectFile.readAsStringSync());
     } else {
       print('Generating Storyboard from DNA...');
-      final File dnaFile = File('/Users/hw24a094/.gemini/antigravity/brain/5394f1f1-d6fd-434d-bfbc-84f02ede0231/encura_product_dna.json');
+      final File dnaFile = File(Platform.environment['AMU_DNA_PATH'] ?? 'amu_output/encura_product_dna.json');
       final Map<String, dynamic> dna = jsonDecode(dnaFile.readAsStringSync());
       final generator = StoryboardGenerator();
       storyboard = generator.generateStoryboard(dna);
